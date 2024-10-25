@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import RequireAuth from '../components/RequireAuth';
+import axios from 'axios';
 
 const SelectPage = () => {
     // ニックネーム保存用のステート
@@ -14,20 +15,41 @@ const SelectPage = () => {
     // ページの読み込み時にプロフィール情報を取得
     useEffect(() => {
         const fetchProfile = async () => {
-            //ダミーAPIでデータを取得
-            setNickname('User1');
-            setTotalPlayTime(1111);
+            try {
+                const token = sessionStorage.getItem('authToken');
+                const response = await axios.get('http://localhost:8085/api/profile', {
+                    headers: {
+                        Authorization: `Bearer ${token}`
+                    }
+                });
+                if (response.status === 200) {
+                    setNickname(response.data.nickname);
+                    setTotalPlayTime(response.data.totalPlayTime);
+                }
+            } catch (error) {
+                alert('プロフィール情報の取得に失敗しました');
+            }
         };
 
         // プロフィール情報の取得を実行
         fetchProfile();
-    }, []);// 初回レンダリング時のみの実行
+    }, []); // 初回レンダリング時のみの実行
 
-
-    const handleLogout = () => {
-        sessionStorage.removeItem('authToken');
-        // startpageに戻る
-        navigate('/');
+    // ログアウト処理
+    const handleLogout = async () => {
+        try {
+            const token = sessionStorage.getItem('authToken');
+            await axios.post('http://localhost:8085/api/auth/logout', {}, {
+                headers: {
+                    Authorization: `Bearer ${token}`
+                }
+            });
+            sessionStorage.removeItem('authToken');
+            // startpageに戻る
+            navigate('/');
+        } catch (error) {
+            alert('ログアウトに失敗しました');
+        }
     };
 
     // プロフィールセッティングボタン押下時の処理
@@ -40,7 +62,7 @@ const SelectPage = () => {
     const handleGame = (difficulty) => {
         // URLに難易度を付けてゲームページに遷移
         navigate(`/game?difficulty=${difficulty}`);
-    }
+    };
 
     return (
         <RequireAuth>
@@ -62,3 +84,4 @@ const SelectPage = () => {
 };
 
 export default SelectPage;
+

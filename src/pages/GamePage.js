@@ -1,127 +1,131 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import RequireAuth from "../components/RequireAuth";
+import axios from "axios";
 
+// GamePageコンポーネントの定義
 const GamePage = () => {
-    const [time, setTime] = useState(0);
-    const [playerPosition, setPlayerPosition] = useState({ x: 0, y: 0 });
-    const [field, setField] = useState([]);
-    const navigate = useNavigate();
-    const location = useLocation();
-    const difficulty = new URLSearchParams(location.search).get('difficulty');
+    const [time, setTime] = useState(0); // 経過時間の保持
+    const [playerPosition, setPlayerPosition] = useState({ x: 1, y: 1 }); // プレイヤーの初期位置（フィールドの内側）
+    const [field, setField] = useState([]); // ゲームフィールドの保持
+    const navigate = useNavigate(); // ルーティング用
 
-    // フィールドをAPIから取得
-    useEffect(() => {
-        const fetchField = async () => {
-            try {
-                const response = await fetch('http://localhost:8085/api/fields', {
-                    method: 'GET',
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+    // フィールドデータをAPIから取得
+    const fetchFieldData = async () => {
+        try {
+            const token = sessionStorage.getItem("authToken");
+            const queryParams = new URLSearchParams(window.location.search);
+            const difficulty = queryParams.get("difficulty");
+
+            const response = await axios.get(`http://localhost:8085/api/fields?level=${difficulty}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            const fieldData = response.data.field;
+            setField(fieldData);
+
+            // フィールドからプレイヤーの初期位置を探す
+            for (let y = 0; y < fieldData.length; y++) {
+                for (let x = 0; x < fieldData[y].length; x++) {
+                    if (fieldData[y][x] === 2) { // プレイヤーの初期位置は '2'
+                        setPlayerPosition({ x, y });
+                        return; // 見つけた時点でループを終了
                     }
-                });
-                const data = await response.json();
-                setField(data.objects);
-            } catch (error) {
-                console.error('フィールド取得エラー:', error);
+                }
             }
-        };
-        fetchField();
+        } catch (error) {
+            console.error("フィールドデータ取得エラー:", error);
+        }
+    };
 
+    // 初期化処理
+    useEffect(() => {
+        fetchFieldData();
+    }, []); // 初回レンダリング時のみ実行
+
+    // 経過時間のカウント
+    useEffect(() => {
         const timer = setInterval(() => setTime((prevTime) => prevTime + 1), 1000);
-        return () => clearInterval(timer);
+        return () => clearInterval(timer); // クリーンアップ
     }, []);
 
+    // キー入力の処理
     const handleKeyDown = useCallback((e) => {
         const { x, y } = playerPosition;
         let newX = x;
         let newY = y;
 
-        if (e.key === 'ArrowUp') {
-            newY -= 1;
-        } else if (e.key === 'ArrowDown') {
-            newY += 1;
-        } else if (e.key === 'ArrowLeft') {
-            newX -= 1;
-        } else if (e.key === 'ArrowRight') {
-            newX += 1;
-        }
+        if (e.key === 'ArrowUp') newY -= 1;
+        else if (e.key === 'ArrowDown') newY += 1;
+        else if (e.key === 'ArrowLeft') newX -= 1;
+        else if (e.key === 'ArrowRight') newX += 1;
 
-        if (newY < 0 || newY >= field.length) {
-            return;
-        }
+        // フィールド境界と障害物のチェック
         if (
-            newY >= 0 &&
-            newX >= 0 &&
-            newY < field.length &&
-            newX < (field[newY] ? field[newY].length : 0) &&
-            field[newY][newX] !== 'W'
+            newY >= 0 && newY < field.length &&
+            newX >= 0 && newX < field[newY].length &&
+            field[newY][newX] !== 1 // 壁 '1' の場合は移動不可
         ) {
-            if (field[newY][newX] === 'B') {
-                const blockNewX = newX + (newX - x);
+            if (field[newY][newX] === 3) { // ブロック '3' の場合はブロックを動かす
+                const blockNewX = newX + (newX - x); // ブロックの次の座標
                 const blockNewY = newY + (newY - y);
 
                 if (
-                    blockNewX >= 0 &&
-                    blockNewY >= 0 &&
-                    blockNewX < field.length &&
-                    blockNewY < (field[blockNewY] ? field[blockNewY].length : 0) &&
-                    field[blockNewY][blockNewX] === ''
+                    blockNewX >= 0 && blockNewX < field[0].length &&
+                    blockNewY >= 0 && blockNewY < field.length &&
+                    field[blockNewY][blockNewX] === 0 // ブロック移動先が空白か
                 ) {
-                    const newField = field.map((row) => [...row]);
-                    newField[newY][newX] = '';
-                    newField[blockNewY][blockNewX] = 'B';
-                    setField(newField);
-                    setPlayerPosition({ x: newX, y: newY });
+                    const newField = field.map((row) => [...row]); // フィールドのコピー
+                    newField[newY][newX] = 0; // ブロック元の位置を空にする
+                    newField[blockNewY][blockNewX] = 3; // ブロックの新しい位置
+                    setField(newField); // フィールド更新
+                    setPlayerPosition({ x: newX, y: newY }); // プレイヤーを更新
                 }
             } else {
-                setPlayerPosition({ x: newX, y: newY });
+                setPlayerPosition({ x: newX, y: newY }); // 壁やブロックでないなら移動
             }
         }
 
-        if (field[newY][newX] === 'F') {
-            saveResult();
-            navigate('/clear');
+        // プレイヤーがフラッグ（ゴール）に到達した場合
+        if (field[newY][newX] === 4) {
+            handleGameEnd();
         }
-    }, [playerPosition, field, navigate]);
+    }, [playerPosition, field]);
+
+    // ゲーム終了時の結果投稿処理
+    const handleGameEnd = useCallback(async () => {
+        try {
+            const token = sessionStorage.getItem("authToken");
+            await axios.post('http://localhost:8085/api/results', {
+                elapsedTime: time
+            }, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            // クリア画面に遷移
+            navigate('/clear');
+        } catch (error) {
+            alert('結果の投稿に失敗しました');
+        }
+    }, [time, navigate]);
 
     useEffect(() => {
         window.addEventListener('keydown', handleKeyDown);
-        return () => {
-            window.removeEventListener('keydown', handleKeyDown);
-        };
+        return () => window.removeEventListener('keydown', handleKeyDown);
     }, [handleKeyDown]);
 
-    const saveResult = async () => {
-        try {
-            const response = await fetch('http://localhost:8085/api/results', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`,
-                },
-                body: JSON.stringify({ block_moves: 0, time }), // ここで必要なデータを送信
-            });
-            if (!response.ok) {
-                throw new Error('結果の送信に失敗しました');
-            }
-        } catch (error) {
-            console.error('結果送信エラー:', error);
-        }
-    };
-
+    // 時間のフォーマット
     const formatTime = (time) => {
         const minutes = Math.floor(time / 60);
-        const seconds = Math.floor(time % 60);
+        const seconds = time % 60;
         return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
     };
 
     return (
         <RequireAuth>
             <div>
-                <h1>GamePage - Difficulty: {difficulty}</h1>
+                <h1>GamePage</h1>
                 <p>Time: {formatTime(time)}</p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 50px)', gap: '5px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: `repeat(${field[0]?.length || 5}, 50px)`, gap: '5px' }}>
                     {field.map((row, rowIndex) => (
                         row.map((cell, cellIndex) => (
                             <div
@@ -136,7 +140,7 @@ const GamePage = () => {
                                     backgroundColor: playerPosition.x === cellIndex && playerPosition.y === rowIndex ? 'blue' : 'white'
                                 }}
                             >
-                                {cell === 'B' ? 'B' : cell === 'W' ? 'W' : cell === 'F' ? 'F' : ''}
+                                {cell === 1 ? 'W' : cell === 3 ? 'B' : cell === 4 ? 'F' : ''}
                             </div>
                         ))
                     ))}

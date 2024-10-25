@@ -1,7 +1,7 @@
 // 各フックのインポート
 import React, { useState } from "react";
-import { login } from '../api/auth'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom';
+import axios from 'axios'; // axiosを使用してAPI呼び出し
 
 const StartPage = () => {
     // ユーザ名とパスワードを保存するステートの宣言
@@ -12,17 +12,22 @@ const StartPage = () => {
 
     // ログインボタンクリックでhandleLogin関数を呼び出し
     const handleLogin = async () => {
-        // 以下try&catch文
         try {
-            // ogin関数を呼び出して認証、トークンを取得
-            const token = await login(username, password);
+            // POSTリクエストを用いて認証トークンを取得
+            const response = await axios.post('http://localhost:8085/api/auth/login', {
+                username,
+                password
+            });
+
             // 認証成功後セッションをストレージに保存
-            sessionStorage.setItem('authToken', token);
-            // selectページに遷移
-            navigate('/select');
+            if (response.status === 200) {
+                sessionStorage.setItem('authToken', response.data.token);
+                // selectページに遷移
+                navigate('/select');
+            }
         } catch (error) {
             // 認証失敗時にはエラーメッセージをアラート表示
-            alert(error.message);
+            alert('The username or password is incorrect.');
         }
     };
 

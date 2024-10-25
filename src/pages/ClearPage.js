@@ -1,28 +1,50 @@
-import React, {useEffect, useState} from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import RequireAuth from "../components/RequireAuth";
+import axios from "axios";
 
 const ClearPage = () => {
     const [ranking, setRanking] = useState([]);
     const navigate = useNavigate();
 
+    // ランキング情報の取得
     useEffect(() => {
         const fetchRanking = async () => {
-            setRanking([
-                {username: 'User1', time: 120},
-                {username: 'User2', time: 150},
-                {username: 'User3', time: 180},
-            ]);
+            try {
+                const token = sessionStorage.getItem('authToken');
+                const queryParams = new URLSearchParams(window.location.search);
+                const difficulty = queryParams.get('difficulty');
+
+                const response = await axios.get(`http://localhost:8085/api/results?level=${difficulty}`, {
+                    headers: {
+                        Authorization: `Bearer ${token}`
+                    }
+                });
+
+                if (response.status === 200) {
+                    setRanking(response.data.results);
+                }
+            } catch (error) {
+                console.error('ランキングの取得に失敗しました:', error);
+            }
         };
 
         fetchRanking();
-    },[]);
+    }, []);
 
+    // リプレイボタンの処理
     const handleReplay = () => {
         navigate('/select');
     };
 
-    return(
+    // 時間のフォーマット
+    const formatTime = (time) => {
+        const minutes = Math.floor(time / 60);
+        const seconds = time % 60;
+        return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+    };
+
+    return (
         <RequireAuth>
             <div>
                 <h1>Clear Page</h1>
@@ -31,7 +53,7 @@ const ClearPage = () => {
                 <ul>
                     {ranking.map((item, index) => (
                         <li key={index}>
-                            {index + 1}.{item.username} - {Math.floor(item.time / 60)}:{item.time % 60}
+                            {index + 1}. {item.username} - {formatTime(item.time)}
                         </li>
                     ))}
                 </ul>
